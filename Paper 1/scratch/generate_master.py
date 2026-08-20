@@ -1,0 +1,87 @@
+import json
+import os
+
+paper1_dir = "/Users/satabarto/Research/Paper 1"
+master_path = os.path.join(paper1_dir, "Master_Runner.ipynb")
+
+markdown_cell = {
+    "cell_type": "markdown",
+    "metadata": {},
+    "source": [
+        "# Master Orchestrator\n",
+        "This notebook acts as the master driver for all 104 comparative model notebooks in `Paper 1`.\n",
+        "\n",
+        "It will automatically locate all `.ipynb` files (except itself) and execute them in parallel using your 96GB RTX 6000 Pro.\n",
+        "Each notebook will save its results and outputs *back into itself*, so you can inspect them later."
+    ]
+}
+
+code_cell = {
+    "cell_type": "code",
+    "execution_count": None,
+    "metadata": {},
+    "outputs": [],
+    "source": [
+        "import os\n",
+        "import glob\n",
+        "import papermill as pm\n",
+        "import concurrent.futures\n",
+        "from tqdm.notebook import tqdm\n",
+        "\n",
+        # 1. Find all model notebooks inside the absolute 'Paper 1' directory
+        "paper_dir = '/marimo/Paper 1'\n",
+        "if not os.path.exists(paper_dir):\n",
+        "    print(f'Error: Could not find {paper_dir} directory.')\n",
+        "all_notebooks = glob.glob(f'{paper_dir}/**/*.ipynb', recursive=True)\n",
+        "# Filter out checkpoints and explicitly ensure we don't run the master runner itself\n",
+        "all_notebooks = [nb for nb in all_notebooks if 'Master_Runner' not in nb and '.ipynb_checkpoints' not in nb]\n",
+        "\n",
+        "print(f'Found {len(all_notebooks)} notebooks to execute.')\n",
+        "\n",
+        "# 2. Define the execution function\n",
+        "def execute_notebook(nb_path):\n",
+        "    try:\n",
+        "        # Execute the notebook and save the output back to itself\n",
+        "        pm.execute_notebook(\n",
+        "            input_path=nb_path,\n",
+        "            output_path=nb_path,\n",
+        "            cwd=paper_dir, # Forces all notebooks to treat '/marimo/Paper 1' as the root so data paths work flawlessly\n",
+        "            kernel_name='python3', # Forces the default Python kernel, overriding any missing local kernels\n",
+        "            log_output=False\n",
+        "        )\n",
+        "        return (nb_path, True, None)\n",
+        "    except Exception as e:\n",
+        "        return (nb_path, False, str(e))\n",
+        "\n",
+        "# 3. Execute in parallel\n",
+        "# Safe concurrency for 96GB VRAM. Adjust max_workers if you run out of memory.\n",
+        "MAX_WORKERS = 10\n",
+        "\n",
+        "results = []\n",
+        "print(f'Starting execution with {MAX_WORKERS} parallel workers...')\n",
+        "\n",
+        "with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:\n",
+        "    futures = [executor.submit(execute_notebook, nb) for nb in all_notebooks]\n",
+        "    \n",
+        "    for future in tqdm(concurrent.futures.as_completed(futures), total=len(all_notebooks), desc=\"Running Models\"):\n",
+        "        nb_path, success, error_msg = future.result()\n",
+        "        if success:\n",
+        "            results.append(nb_path)\n",
+        "        else:\n",
+        "            print(f'❌ Failed: {nb_path} | Error: {error_msg}')\n",
+        "\n",
+        "print(f'\\n✅ Execution Complete! Successfully ran {len(results)} out of {len(all_notebooks)} notebooks.')\n"
+    ]
+}
+
+nb = {
+    "cells": [markdown_cell, code_cell],
+    "metadata": {},
+    "nbformat": 4,
+    "nbformat_minor": 5
+}
+
+with open(master_path, "w", encoding="utf-8") as f:
+    json.dump(nb, f, indent=2)
+
+print(f"Created {master_path}")
