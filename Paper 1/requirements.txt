@@ -1,2 +1,5 @@
 papermill>=2.6.0
 tqdm>=4.66.0
+
+tabulate
+papermill
